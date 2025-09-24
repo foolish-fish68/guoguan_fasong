@@ -1,13 +1,13 @@
-import os
-import shutil
-import tkinter as tk
-from tkinter import filedialog
-import fitz  # PyMuPDF
-from PIL import Image
-import time
-import threading
-import datetime
-import sys
+import os                           # 导入 Python 的操作系统接口模块，用于执行文件路径操作、系统命令等功能（如文件存在性判断、路径拼接等）
+import shutil                       # 导入高级文件操作模块，提供文件复制、移动、删除等更便捷的文件操作功能
+import tkinter as tk                # 导入Tkinter GUI 库并为其指定别名tk，用于创建图形用户界面（如窗口、按钮、文件对话框等）
+from tkinter import filedialog      # 从 Tkinter 中导入文件对话框模块，专门用于弹出 “打开文件” 或 “保存文件” 的对话框
+import fitz  # PyMuPDF              # 导入PyMuPDF 库（别名fitz），用于 PDF 文件的高级处理（如读取、修改、添加内容到 PDF 等）
+from PIL import Image               # 从 **Python Imaging Library（PIL）** 中导入Image模块，用于图像处理（如打开、裁剪、缩放图像等）
+import time                         # 导入时间模块，用于执行时间相关操作（如延时、获取当前时间戳等）
+import threading                    # 导入线程模块，用于实现多线程编程，让程序可以并发执行多个任务
+import datetime                     # 导入日期时间模块，用于处理日期、时间的创建、格式化、计算等
+import sys                          # 导入系统模块，用于访问 Python 解释器的系统级参数（如命令行参数、退出程序等）
 
 
 def create_stamp_layer(pdf_width_px, pdf_height_px, stamp_path, center_x_px, center_y_px):
@@ -68,130 +68,100 @@ def apply_stamp(pdf_path, stamp_path):
             os.remove(temp_pdf)
         return False
 
-
-def process_files(pdf_files):
-    """完整流程：选择文件 → 备份 → 盖章 → 结果输出"""
+def process_single_file(file_path):
+    """处理单个文件：备份→盖章"""
     # 初始化印章路径
     success_stamp = r"\\192.168.110.248\guoguan\电子印章\过关通过.png"
     fail_stamp = r"\\192.168.110.248\guoguan\电子印章\过关未通过.png"
 
-    # 按目录分组处理文件
-    dir_groups = {}
-    for path in pdf_files:
-        dir_path = os.path.dirname(path)
-        if dir_path not in dir_groups:
-            dir_groups[dir_path] = []
-        dir_groups[dir_path].append(path)
+    dir_path = os.path.dirname(file_path)
+    filename = os.path.basename(file_path)
+    backup_dir = os.path.join(dir_path, "盖章前留存")
+    os.makedirs(backup_dir, exist_ok=True)
 
-    # 统计结果
-    total = len(pdf_files)
-    success = 0
-    failed = 0
+    # 备份文件
+    try:
+        shutil.copy2(file_path, os.path.join(backup_dir, filename))
+        print(f"  已备份: {filename}")
+    except Exception as e:
+        print(f"  备份失败: {filename} - {str(e)}")
+        return False
 
-    # 按目录处理文件
-    for dir_path, files in dir_groups.items():
-        # 创建目录下的备份文件夹
-        backup_dir = os.path.join(dir_path, "盖章前留存")
-        os.makedirs(backup_dir, exist_ok=True)
+    # 选择印章
+    stamp_path = success_stamp if "过关通过" in file_path else fail_stamp
+    if not os.path.exists(stamp_path):
+        print(f"  错误: 印章文件不存在 - {stamp_path}")
+        return False
 
-        print(f"\n处理目录: {dir_path}")
-        print(f"备份文件夹: {backup_dir}")
+    # 创建印章图层
+    temp_stamp = create_stamp_layer(2481, 3508, stamp_path, 2010, 1245)
+    if not temp_stamp:
+        return False
 
-        # 处理当前目录下的文件
-        for path in files:
-            # 备份文件
-            try:
-                shutil.copy2(path, os.path.join(backup_dir, os.path.basename(path)))
-                print(f"  已备份: {os.path.basename(path)}")
-            except Exception as e:
-                print(f"  备份失败: {os.path.basename(path)} - {str(e)}")
-                failed += 1
-                continue
+    # 合并印章（非增量模式）
+    if apply_stamp(file_path, temp_stamp):
+        print(f"  成功: {filename}")
+        return True
+    else:
+        print(f"  失败: {filename}")
+        return False
 
-            # 选择印章
-            stamp_path = success_stamp if "过关通过" in path else fail_stamp
-            if not os.path.exists(stamp_path):
-                print(f"  错误: 印章文件不存在 - {stamp_path}")
-                failed += 1
-                continue
+def send_single_file(file_path, sent_dir):
+    """发送单个文件：复制到目标目录→移动到已发送"""
+    filename = os.path.basename(file_path)
+    source_dir = os.path.dirname(file_path)
 
-            # 创建印章图层
-            temp_stamp = create_stamp_layer(2480, 3507, stamp_path, 1008, 1100)
-            if not temp_stamp:
-                failed += 1
-                continue
+    # 复用学号范围规则
+    student_id_ranges = {
+        (1000, 2299): r"\\ZHISHOU\fasong\25失败",
+        (2300, 2999): r"\\ZHISHOU\fasong\29失败",
+        (3000, 3999): r"\\ZHISHOU\fasong\28失败",
+        (5000, 6999): r"\\ZHISHOU\fasong\26失败",
+        (7500, 7999): r"\\ZHISHOU\fasong\30失败",
+        (8000, 8999): r"\\ZHISHOU\fasong\27失败",
+        (9700, 9999): r"\\ZHISHOU\fasong\31失败",
+    }
 
-            # 合并印章（非增量模式）
-            if apply_stamp(path, temp_stamp):
-                success += 1
-                print(f"  成功: {os.path.basename(path)}")
-            else:
-                failed += 1
-                print(f"  失败: {os.path.basename(path)}")
+    # 匹配学号规则
+    import re
+    match = re.search(r'^[^_]*?_(\d{4})', filename)
+    if not match:
+        print(f"  跳过无效文件: {filename}（第一个下划线后未找到4位数字）")
+        return False
 
-    # 输出结果
-    print("\n" + "=" * 50)
-    print(f"处理结果: 总文件 {total} | 成功 {success} | 失败 {failed}")
-    print("=" * 50)
+    try:
+        student_id = int(match.group(1))
+    except ValueError:
+        print(f"  跳过无效文件: {filename}（学号不是有效数字）")
+        return False
 
-    return success, failed
+    target_dir = None
+    for (start, end), dir_path in student_id_ranges.items():
+        if start <= student_id <= end:
+            target_dir = dir_path
+            break
 
+    if not target_dir:
+        print(f"  跳过未匹配文件: {filename}（学号{student_id}不在任何范围内）")
+        return False
 
-# 根据模式复制文件到目标目录
-def copy_files_by_pattern(source_dir, sent_dir):
-    # 定义模式和对应的目标路径，可根据需求调整
-    patterns = ["_1", "_2", "_3", "_5","_6", "_8"]
-    target_dirs = [
-        r"\\ZHISHOU\fasong\25失败",
-        r"\\ZHISHOU\fasong\25失败",  # _2 模式对应路径
-        r"\\ZHISHOU\fasong\28失败",
-        r"\\ZHISHOU\fasong\26失败",
-        r"\\ZHISHOU\fasong\26失败",
-        r"\\ZHISHOU\fasong\27失败"
-    ]
-    pattern_map = dict(zip(patterns, target_dirs))
-    success, failed, total = 0, 0, 0
-
-    # 确保目标目录存在
-    for target_dir in target_dirs:
+    # 复制到目标目录
+    try:
         os.makedirs(target_dir, exist_ok=True)
+        dest_path = os.path.join(target_dir, filename)
+        shutil.copy2(file_path, dest_path)
+    except Exception as e:
+        print(f"  复制失败 {filename}: {str(e)}")
+        return False
 
-    # 确保"已发送"目录存在
-    os.makedirs(sent_dir, exist_ok=True)
-
-    for filename in os.listdir(source_dir):
-        file_path = os.path.join(source_dir, filename)
-        # 仅处理PDF文件
-        if not (os.path.isfile(file_path) and filename.lower().endswith('.pdf')):
-            continue
-
-        for pattern, target in pattern_map.items():
-            if pattern in filename:
-                total += 1
-                try:
-                    # 复制文件到目标目录
-                    shutil.copy2(file_path, os.path.join(target, filename))
-                    success += 1
-                except Exception as e:
-                    print(f"复制失败 {filename}: {str(e)}")
-                    failed += 1
-                break  # 匹配后跳出模式循环
-
-    return success, failed, total
-
-
-# 移动已处理的PDF到"已发送"文件夹
-def move_processed_files(source_dir, sent_dir):
-    moved = 0
-    for filename in os.listdir(source_dir):
-        file_path = os.path.join(source_dir, filename)
-        if os.path.isfile(file_path) and filename.lower().endswith('.pdf'):
-            try:
-                shutil.move(file_path, os.path.join(sent_dir, filename))
-                moved += 1
-            except Exception as e:
-                print(f"移动失败 {filename}: {str(e)}")
-    return moved
+    # 移动到已发送文件夹
+    try:
+        shutil.move(file_path, os.path.join(sent_dir, filename))
+        print(f"  已发送: {filename}")
+        return True
+    except Exception as e:
+        print(f"  移动失败 {filename}: {str(e)}")
+        return False
 
 
 def process_directory(source_dir):
@@ -210,7 +180,7 @@ def process_directory(source_dir):
 
 
 def monitor_directory(source_dir, interval=600):  # 10分钟=600秒
-    """后台监测目录变化，interval为检测间隔(秒)"""
+    """后台监测目录变化，逐个处理文件确保完整流程"""
     while True:
         try:
             if not os.path.exists(source_dir):
@@ -218,17 +188,27 @@ def monitor_directory(source_dir, interval=600):  # 10分钟=600秒
                 time.sleep(10)
                 continue
 
-            # 检查目录中是否有PDF文件
-            has_pdf = any(
-                filename.lower().endswith('.pdf')
-                for filename in os.listdir(source_dir)
-            )
+            # 获取当前目录下所有PDF文件（每次循环重新获取，确保处理新文件）
+            pdf_files = [
+                os.path.join(source_dir, f)
+                for f in os.listdir(source_dir)
+                if os.path.isfile(os.path.join(source_dir, f)) and f.lower().endswith('.pdf')
+            ]
 
-            if has_pdf:
-                print(f"\n发现PDF文件，开始处理...")
-                pdf_files = [os.path.join(source_dir, f) for f in os.listdir(source_dir) if f.lower().endswith('.pdf')]
-                process_files(pdf_files)
-                process_directory(source_dir)
+            if pdf_files:
+                print(f"\n发现{len(pdf_files)}个PDF文件，开始逐个处理...")
+                # 逐个处理文件
+                for file_path in pdf_files:
+                    # 1. 处理单个文件（备份+盖章）
+                    if not process_single_file(file_path):
+                        print(f"  跳过发送未成功处理的文件: {os.path.basename(file_path)}")
+                        continue
+
+                    # 2. 发送单个文件（复制+移动）
+                    sent_dir = os.path.join(os.path.dirname(source_dir), "已发送")
+                    os.makedirs(sent_dir, exist_ok=True)
+                    send_single_file(file_path, sent_dir)
+
             else:
                 # 显示倒计时
                 for i in range(interval, 0, -1):
@@ -269,7 +249,6 @@ def main():
             time.sleep(1)
     except KeyboardInterrupt:
         print("\n程序被用户中断")
-
 
 if __name__ == "__main__":
     main()
