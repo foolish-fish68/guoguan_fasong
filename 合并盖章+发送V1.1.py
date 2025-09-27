@@ -94,7 +94,7 @@ def process_single_file(file_path):
         return False
 
     # 创建印章图层
-    temp_stamp = create_stamp_layer(2481, 3508, stamp_path, 2010, 1245)
+    temp_stamp = create_stamp_layer(2481, 3508, stamp_path, 2010, 1035)
     if not temp_stamp:
         return False
 
