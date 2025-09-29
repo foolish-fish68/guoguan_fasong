@@ -197,10 +197,10 @@ def send_single_file(file_path, sent_dir):
     student_id_ranges = {
         (1000, 2299): r"\\ZHISHOU\fasong\25失败",
         (2300, 2999): r"\\ZHISHOU\fasong\29失败",
-        (3000, 3999): r"\\ZHISHOU\fasong\28失败",
+        (3000, 4999): r"\\ZHISHOU\fasong\28失败",
         (5000, 6999): r"\\ZHISHOU\fasong\26失败",
         (7500, 7999): r"\\ZHISHOU\fasong\30失败",
-        (8000, 8999): r"\\ZHISHOU\fasong\27失败",
+        (8000, 9699): r"\\ZHISHOU\fasong\27失败",
         (9700, 9999): r"\\ZHISHOU\fasong\31失败",
     }
 
